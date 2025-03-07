@@ -1,23 +1,19 @@
 const db = require("../connection");
-const {topicData, userData, articleData, commentData} = require("../data/development-data");
+//const { topicData, userData, articleData, commentData } = require("../data/development-data");
 const format = require("pg-format");
+
 const seed = ({ topicData, userData, articleData, commentData }) => {
-
-  //////////create and drop tables
-
-  return db.query(`DROP TABLE IF EXISTS comments, articles, users, topics`)
-    // topics table
+  return db
+    .query(`DROP TABLE IF EXISTS comments, articles, users, topics;`)
     .then(() => {
       return db.query(`
         CREATE TABLE topics (
           slug VARCHAR(100) PRIMARY KEY,
           description VARCHAR(100) NOT NULL,
-          IMG_URL VARCHAR(1000)
+          img_url VARCHAR(1000)
         );
       `);
     })
-
-    // users table
     .then(() => {
       return db.query(`
         CREATE TABLE users (
@@ -27,68 +23,106 @@ const seed = ({ topicData, userData, articleData, commentData }) => {
         );
       `);
     })
-
-    // articles table
     .then(() => {
       return db.query(`
         CREATE TABLE articles (
           article_id SERIAL PRIMARY KEY,
           title VARCHAR(100) NOT NULL,
-          topic VARCHAR(100)  REFERENCES topics(slug),
-          author VARCHAR(100)  REFERENCES users(username),
+          topic VARCHAR(100) REFERENCES topics(slug),
+          author VARCHAR(100) REFERENCES users(username),
           body TEXT NOT NULL,
           votes INT DEFAULT 0,
           article_img_url VARCHAR(1000),
-          created_at TIMESTAMP
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
       `);
     })
-
-    // comments table
     .then(() => {
       return db.query(`
         CREATE TABLE comments (
-          article_title INT REFERENCES articles(title),
           comment_id SERIAL PRIMARY KEY,
-          body TEXT,
-          votes INT,
-          author VARCHAR(100),
-          created_at TIMESTAMP
+          article_id INT REFERENCES articles(article_id),
+          author VARCHAR(100) REFERENCES users(username),
+          body TEXT NOT NULL,
+          votes INT DEFAULT 0,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
       `);
     })
     .then(() => {
       console.log("Tables created successfully!");
-    })
 
-    .catch((err) => {
-      console.log("error! seeding failed!", err);
-    }).then(() => {
-const nestedArrayComments = commentData.map((comment) => {
- return [['article_title', comment.article_title], ['body', comment.body], ['votes', comment.votes], ['author', comment.author], ['created_at', comment.created_at]]
-  })
-  
-  //insert data
-  
-  const dataInsertComments = format(
-    `INSERT INTO comments(article_title, body, votes, author, created_at) VALUES %L RETURNING*;`, nestedArrayComments
-  )
-  
-  return db.query(dataInsertComments)
-  .then((resultsInserted) => {
-    console.log("Data inserted succesfully!");
-  })
-  .catch((error) => {
-    console.log("Unsuccessful insertion!");
-  })
-}).then(
-  () => {
-    const nextedArrayArticles = articleData.map((article) => {
-      
+      const nestedArrayUsers = userData.map(({ username, name, avatar_url }) => [
+        username,
+        name,
+        avatar_url,
+      ]);
+      const dataInsertUsers = format(
+        `INSERT INTO users (username, name, avatar_url) VALUES %L RETURNING *;`,
+        nestedArrayUsers
+      );
+      return db.query(dataInsertUsers);
     })
-  }
-)
+    .then(() => {
+      console.log("Users inserted successfully!");
+
+      const nestedArrayTopics = topicData.map(({ description, slug, img_url }) => [
+        slug,
+        description,
+        img_url,
+      ]);
+      const dataInsertTopics = format(
+        `INSERT INTO topics (slug, description, img_url) VALUES %L RETURNING *;`,
+        nestedArrayTopics
+      );
+      return db.query(dataInsertTopics);
+    })
+    .then(() => {
+      console.log("Topics inserted successfully!");
+
+      const nestedArrayArticles = articleData.map(({ title, topic, author, body, created_at, votes, article_img_url }) => [
+        title,
+        topic,
+        author,
+        body,
+        created_at,
+        votes,
+        article_img_url,
+      ]);
+      const dataInsertArticles = format(
+        `INSERT INTO articles (title, topic, author, body, created_at, votes, article_img_url) VALUES %L RETURNING *;`,
+        nestedArrayArticles
+      );
+      return db.query(dataInsertArticles);
+    })
+    .then(({ rows: articles }) => {
+      console.log("Articles inserted successfully!");
+
+      const articleIdLookup = {};
+      articles.forEach((article) => {
+        articleIdLookup[article.title] = article.article_id;
+      });
+
+      const nestedArrayComments = commentData.map(({ body, votes, author, created_at, article_title }) => [
+        articleIdLookup[article_title],
+        author,
+        body,
+        votes,
+        created_at,
+      ]);
+
+      const dataInsertComments = format(
+        `INSERT INTO comments (article_id, author, body, votes, created_at) VALUES %L RETURNING *;`,
+        nestedArrayComments
+      );
+      return db.query(dataInsertComments);
+    })
+    .then(() => {
+      console.log("Comments inserted successfully!");
+    })
+    .catch((err) => {
+      console.error("Error seeding database:", err);
+    });
 };
 
-  
 module.exports = seed;
